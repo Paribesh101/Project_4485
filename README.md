@@ -1,8 +1,17 @@
-# Redact Protected Health Information (PHI)
+# Project Overview
+
+This repository contains two main components:
+
+1. **Redact Protected Health Information (PHI)** – A Python script that redacts sensitive data from text files.
+2. **React Frontend** – A web application bootstrapped with Create React App.
+
+---
+
+# 1. Redact Protected Health Information (PHI)
 
 ## Description
 
-This script redacts PHI from an input text file. It replaces sensitive data such as names, addresses, phone numbers, emails, dates of birth, and SSN with predefined tags.
+This script redacts PHI from an input text file. It replaces sensitive data such as names, addresses, phone numbers, emails, dates of birth, and SSNs with predefined tags.
 
 ## Requirements
 
@@ -14,32 +23,3 @@ This script redacts PHI from an input text file. It replaces sensitive data such
    ```bash
    git clone <repository_url>
    cd <repository_name>
-   ```
-2. Ensure Python is installed on your system.
-
-## Usage
-
-Run the script from the terminal:
-
-```bash
-python redact_phi.py <input_file> <output_file>
-```
-
-Example:
-
-```bash
-python redact_phi.py ehrJMS.txt redacted_ehr.txt
-```
-
-## Redacted Fields
-
-- **Name** → `*name*`
-- **Date of Birth** → `*dob*`
-- **Address** → `*address*`
-- **Phone Number** → `*phone*`
-- **Email Address** → `*email*`
-- **SSN** → `*ssn*`
-
-## License
-
-This project is licensed under the MIT License.
