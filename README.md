@@ -38,6 +38,7 @@ python redact_phi.py ehrJMS.txt redacted_ehr.txt
 - **Address** → `*address*`
 - **Phone Number** → `*phone*`
 - **Email Address** → `*email*`
+- **SSN** → `*ssn*`
 
 ## License
 
