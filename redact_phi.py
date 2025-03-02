@@ -7,8 +7,9 @@ def redact_phi(input_file, output_file):
         r'(?<=Patient:\s)\w+\s\w+': '*name*',  # Name
         r'(?<=Date of Birth:\s)\d{2}/\d{2}/\d{4}': '*dob*',  # Date of birth
         r'(?<=Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})': '*address*',  # Address
-        r'(?<=Phone:\s)\d{3}-\d{3}-\d{4}': '*phone*',  # Phone number
-        r'(?<=email:\s)[\w.-]+@[\w.-]+\.\w+': '*email*',  # Email address
+        r'\b\d{3}-\d{3}-\d{4}\b': '*phone*',  # Phone number
+        r'\b[\w.-]+@[\w.-]+\.\w+\b': '*email*',  # Email address
+        r'\b\d{3}-\d{2}-\d{4}\b': '*ssn*',  # Social Security Number
     }
     
     # Read input file
