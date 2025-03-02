@@ -2,7 +2,7 @@
 
 ## Description
 
-This script redacts Protected Health Information (PHI) from an input text file. It replaces sensitive data such as names, addresses, phone numbers, emails, and dates of birth with predefined tags.
+This script redacts Protected Health Information (PHI) from an input text file. It replaces sensitive data such as names, addresses, phone numbers, emails, dates of birth, and SSN with predefined tags.
 
 ## Requirements
 
