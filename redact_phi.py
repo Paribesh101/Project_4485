@@ -4,7 +4,7 @@ import argparse
 def redact_phi(input_file, output_file):
     # Define PHI patterns and their replacements
     phi_patterns = {
-        r'(?<=Patient:\s)\w+\s\w+': '*name*',  # Name
+        r'(?<=Patient:\s)\w+(\s\w+){1,2}': '*name*',  # Name (First, last, optional middle)
         r'(?<=Date of Birth:\s)\d{2}/\d{2}/\d{4}': '*dob*',  # Date of birth
         r'(?<=Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})': '*address*',  # Address
         r'\b\d{3}-\d{3}-\d{4}\b': '*phone*',  # Phone number
