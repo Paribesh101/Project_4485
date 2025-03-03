@@ -2,26 +2,23 @@ import re
 import argparse
 
 def redact_phi(input_file, output_file):
-    # Define PHI patterns and their replacements
+    # Define PHI patterns and the replacements
     phi_patterns = {
         r'(?<=Patient:\s)\w+(\s\w+){1,2}': '*name*',  # Name (First, last, optional middle)
         r'(?<=Date of Birth:\s)\d{2}/\d{2}/\d{4}': '*dob*',  # Date of birth
         r'(?<=Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})': '*address*',  # Address
-        r'\b\d{3}-\d{3}-\d{4}\b': '*phone*',  # Phone number
+        r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b': '*phone*',  # Phone number (parentheses optional)
         r'\b[\w.-]+@[\w.-]+\.\w+\b': '*email*',  # Email address
         r'\b\d{3}-\d{2}-\d{4}\b': '*ssn*',  # Social Security Number
     }
     
-    # Read input file
-    with open(input_file, 'r', encoding='utf-8') as file:
+    with open(input_file, 'r', encoding='utf-8') as file:   # Read input medical record file
         text = file.read()
     
-    # Apply regex substitutions
-    for pattern, replacement in phi_patterns.items():
+    for pattern, replacement in phi_patterns.items():       # Apply regex substitutions
         text = re.sub(pattern, replacement, text)
     
-    # Write redacted content to output file
-    with open(output_file, 'w', encoding='utf-8') as file:
+    with open(output_file, 'w', encoding='utf-8') as file:  # Write redactions to output file
         file.write(text)
     
     print(f"Redacted file saved as {output_file}")
