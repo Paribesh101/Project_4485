@@ -35,8 +35,8 @@ def redact_phi(input_file, output_file):
         text = re.sub(r'\b' + re.escape(patient_name) + r'\b', '*name*', text, flags=re.IGNORECASE)  # Remove full patient name anywhere
     if provider_name:
         last_name = provider_name.split()[-1]
-        text = re.sub(r'\bDr\.?\s*' + re.escape(last_name) + r'\b', '*provider*', text, flags=re.IGNORECASE)  # Remove last name with Dr. prefix
-        text = re.sub(r'\b' + re.escape(provider_name) + r'\b', '*provider*', text, flags=re.IGNORECASE)  # Remove full provider name anywhere
+        text = re.sub(r'\bDr\.?\s*' + re.escape(last_name) + r'\b', '*name*', text, flags=re.IGNORECASE)  # Remove last name with Dr. prefix
+        text = re.sub(r'\b' + re.escape(provider_name) + r'\b', '*name*', text, flags=re.IGNORECASE)  # Remove full provider name anywhere
     
     # Write redacted content to output file
     with open(output_file, 'w', encoding='utf-8') as file:
