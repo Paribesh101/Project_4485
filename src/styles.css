@@ -1,0 +1,30 @@
+.inputfield {
+    width: 40%;
+    margin-top: 18%;
+    margin-left: auto;
+    margin-right: auto;
+    height: 110px;
+}
+
+.inputfield::placeholder {
+    font-size: 1.5em;
+}
+
+
+.icon {
+    position: relative;
+    margin-left: 67%;
+    bottom: 32px;
+    /* Added transition for smooth hover effect */
+    transition: all 0.3s ease;
+}
+
+
+.icon:hover {
+    color: #1976d2; 
+    transform: scale(1.2); 
+    cursor: pointer; 
+}
+
+
+
