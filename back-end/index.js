@@ -1,77 +1,107 @@
-import express from "express"
-import mongoose from "mongoose"
-import dotenv from "dotenv"
+import express from "express";
+import mongoose from "mongoose";
 import multer from "multer";
-import { spawn } from "child_process"; // To run Python script
-import fs from "fs";
+import { spawn } from "child_process";
 import path from "path";
-import csvParser from "csv-parser"; // For processing CSV files
-import User from "/models/user.js"; // Import the correct User model
+import fs from "fs";
+import cors from "cors";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
+
+// Define __dirname and __filename for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-dotenv.config()
-app.use(express.json()); // Middleware to parse JSON data
 
-const PORT = process.env.PORT;
-const MONGOURI = process.env.MONGOURI;
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/'); // Make sure this folder exists
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + "-" + file.originalname);
-    }
+// Multer setup for file uploads, saving to 'uploads/' directory
+const upload = multer({
+    dest: "uploads/", // Save uploaded files to 'uploads/'
+    limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
 });
 
-const upload = multer({storage: storage});
+// MongoDB connection using MONGOURI from .env
+mongoose.connect(process.env.MONGOURI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+})
+    .then(() => console.log("Database Connected"))
+    .catch((err) => console.error("Database connection error:", err));
 
-// Create directories if they don't exist
-if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
-if (!fs.existsSync("deidentified")) fs.mkdirSync("deidentified");
-
-// Patient Schema for MongoDB
+// Patient Schema and Model
 const patientSchema = new mongoose.Schema({
     originalName: String,
     originalDOB: String,
     originalMRN: String,
     originalVisitDate: String,
-    orginalAddress: String,
+    originalAddress: String,
     originalPhone: String,
     originalEmail: String,
-    orginalSSN: String,
-    orignalProvider: String,
-    fileReference: String
+    originalSSN: String,
+    originalProvider: String,
+    fileReference: String,
 });
 
-const PatientModel = mongoose.model("Patient", patientSchema, "patients");
+const PatientModel = mongoose.model("Patient", patientSchema);
 
+// Ensure uploads and deidentified directories exist
+const uploadsDir = path.join(__dirname, "uploads");
+const deidentifiedDir = path.join(__dirname, "deidentified");
 
-// connect to MongoDB Atlas
-mongoose.connect(MONGOURI, { dbName: "project_DB_4485" }).then(() => {
-    console.log("Database Connected")
-    app.listen(PORT, () => {
-        console.log('Server is running on PORT 8000')
-    })
-}).catch((err)=>console.log(err))
+if (!fs.existsSync(uploadsDir)) {
+    console.log(`Creating uploads directory at: ${uploadsDir}`);
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(deidentifiedDir)) {
+    console.log(`Creating deidentified directory at: ${deidentifiedDir}`);
+    fs.mkdirSync(deidentifiedDir, { recursive: true });
+}
 
-// Upload and De-identify Endpoint
+// File Upload and De-identification Endpoint
 app.post("/upload", upload.single("file"), async (req, res) => {
     try {
-        if (!req.file){
+        // Log the incoming request details
+        console.log("Received upload request");
+        console.log("Request body:", req.body);
+        console.log("Request file:", req.file);
+
+        // Check if a file was uploaded
+        if (!req.file) {
+            console.log("No file uploaded in the request");
             return res.status(400).json({ error: "No file uploaded" });
         }
 
+        console.log(`File successfully uploaded to: ${req.file.path}`);
+        console.log(`Original filename: ${req.file.originalname}`);
+        console.log(`File size: ${req.file.size} bytes`);
+
         const inputFilePath = req.file.path;
-        const deidentifiedFileName = 'deidentified-${Date.now()}-${req.file.originalname}';
-        const outputFilePath = path.join("deidentified", deidentifiedFileName);
+        const deidentifiedFileName = `deidentified-${Date.now()}-${req.file.originalname}`;
+        const outputFilePath = path.join(deidentifiedDir, deidentifiedFileName);
 
-        // Read the original file content to extract PHI for storage
-        const originalContent = fs.readFileSync(inputFilePath, "utf-8");
+        console.log(`Input file path: ${inputFilePath}`);
+        console.log(`Output file path: ${outputFilePath}`);
 
-         // Extract PHI using regex
-         const phiPatterns = {
+        // Read the original file content
+        let originalContent;
+        try {
+            originalContent = fs.readFileSync(inputFilePath, { encoding: "utf-8", flag: "r" });
+            console.log(`Original file content:\n${originalContent}`);
+        } catch (err) {
+            console.error(`Error reading input file: ${err.message}`);
+            // Do not delete the file for debugging purposes
+            return res.status(500).json({ error: "Failed to read the uploaded file" });
+        }
+
+        // Extract PHI for database storage
+        const phiPatterns = {
             patientName: /(?<=Patient:\s)[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)/,
             dob: /(?<=Date of Birth:\s)\d{2}\/\d{2}\/\d{4}/,
             mrn: /(?<=Medical Record Number:\s)\d+/,
@@ -84,12 +114,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         };
 
         const patientData = {};
-        for(const [key, pattern] of Object.entries(phiPatterns)){
+        for (const [key, pattern] of Object.entries(phiPatterns)) {
             const match = originalContent.match(pattern);
             patientData[key] = match ? match[0] : null;
         }
 
-        // Store original data in MongoDB
+        // Store patient data in the database
         const patientToStore = {
             originalName: patientData.patientName,
             originalDOB: patientData.dob,
@@ -102,57 +132,110 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             originalProvider: patientData.provider,
             fileReference: deidentifiedFileName,
         };
-        await PatientModel.create(patientToStore);
-        
-        // Run Python script for de-identification
-        const pythonProcess =  spawn("python3", [
-            "readact_phi.py",
+
+        try {
+            await PatientModel.create(patientToStore);
+            console.log("Patient data stored in database");
+        } catch (err) {
+            console.error(`Error storing patient data in database: ${err.message}`);
+            // Do not delete the file for debugging purposes
+            return res.status(500).json({ error: "Failed to store patient data in database" });
+        }
+
+        // Run the de-identification script
+        const pythonScriptPath = path.join(__dirname, "redact_phi.py");
+        if (!fs.existsSync(pythonScriptPath)) {
+            console.log("De-identification script not found");
+            // Do not delete the file for debugging purposes
+            return res.status(500).json({ error: "De-identification script (redact_phi.py) not found" });
+        }
+
+        console.log(`Running Python script: ${pythonScriptPath}`);
+        const pythonProcess = spawn("python3", [
+            pythonScriptPath,
             inputFilePath,
             outputFilePath,
         ]);
 
+        let pythonOutput = "";
+        let pythonError = "";
+
         pythonProcess.stdout.on("data", (data) => {
+            pythonOutput += data.toString();
             console.log(`Python output: ${data}`);
         });
 
         pythonProcess.stderr.on("data", (data) => {
+            pythonError += data.toString();
             console.error(`Python error: ${data}`);
         });
 
+        pythonProcess.on("error", (err) => {
+            console.error(`Failed to start Python process: ${err.message}`);
+            // Do not delete the file for debugging purposes
+            res.status(500).json({ error: "Failed to run de-identification script" });
+        });
+
         pythonProcess.on("close", (code) => {
+            console.log(`Python process exited with code ${code}`);
             if (code === 0) {
-                fs.unlinkSync(inputFilePath);
-                res.status(200).json({
-                    message: "File de-identified and stored successfully",
-                    deidentifiedFile: deidentifiedFileName,
-                });
+                if (fs.existsSync(outputFilePath)) {
+                    console.log(`De-identified file created: ${outputFilePath}`);
+                    // Do not delete the file for debugging purposes
+                    // fs.unlinkSync(inputFilePath);
+                    res.status(200).json({
+                        message: "File de-identified and stored successfully",
+                        deidentifiedFile: deidentifiedFileName,
+                    });
+                } else {
+                    console.log("De-identified file not created");
+                    // Do not delete the file for debugging purposes
+                    // fs.unlinkSync(inputFilePath);
+                    res.status(500).json({ error: "De-identified file was not created" });
+                }
             } else {
-                res.status(500).json({ error: "De-identification failed" });
+                console.error(`Python process failed with code ${code}`);
+                console.error(`Python error output: ${pythonError}`);
+                // Do not delete the file for debugging purposes
+                // fs.unlinkSync(inputFilePath);
+                res.status(500).json({ error: "De-identification failed", details: pythonError });
             }
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
-});
-
-// Retrieve Original Data Endpoint
-app.get("/reidentify/:fileReference", async (req, res) => {
-    try {
-        const patient = await PatientModel.findOne({ fileReference: req.params.fileReference });
-        if (!patient){
-            return res.status(404).json({error: "No data found for this file"});
+        console.error(`Error in /upload endpoint: ${error.message}`);
+        if (req.file && fs.existsSync(req.file.path)) {
+            console.log(`File exists at ${req.file.path}, not deleting for debugging`);
+            // Do not delete the file for debugging purposes
+            // fs.unlinkSync(req.file.path);
         }
-        res.json(patient);
-    } catch (error){
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: "Server error", details: error.message });
     }
 });
 
+// Download De-identified File Endpoint
+app.get("/download/:filename", (req, res) => {
+    const fileName = req.params.filename;
+    const filePath = path.join(deidentifiedDir, fileName);
 
-// Basic endpoint to test server
-app.get("/", (req, res) => {
-    res.send("Server is running");
+    console.log(`Download request for file: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+        console.log(`File not found: ${filePath}`);
+        return res.status(404).json({ error: "File not found" });
+    }
+
+    res.download(filePath, fileName, (err) => {
+        if (err) {
+            console.error(`Error downloading file: ${err.message}`);
+            res.status(500).json({ error: "Error downloading file", details: err.message });
+        } else {
+            console.log(`File downloaded successfully: ${fileName}`);
+        }
+    });
 });
 
-
+// Start the server using PORT from .env
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
