@@ -7,11 +7,11 @@ def redact_phi(input_file, output_file):
         text = file.read()
     
     # Extract patient and provider names
-    patient_name_match = re.search(r'(Patient|Patient name):\s[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)', text)
+    patient_name_match = re.search(r'(Patient|Patient name):\s([A-Z][a-z]+(\s[A-Z][a-z]+){1,2})(?=\n|$)', text)
     provider_name_match = re.search(r'(Provider|Provider name):\sDr\.\s([A-Za-z]+(\s[A-Za-z]+)*)(?=,\sMD)', text)
 
-    patient_name = patient_name_match.group(0) if patient_name_match else None
-    provider_name = provider_name_match.group(0) if provider_name_match else None
+    patient_name = patient_name_match.group(2) if patient_name_match else None
+    provider_name = provider_name_match.group(2) if provider_name_match else None
     
     # Define PHI patterns and replacements
     phi_patterns = {
