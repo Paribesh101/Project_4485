@@ -7,36 +7,27 @@ def redact_phi(input_file, output_file):
         text = file.read()
     
     # Extract patient and provider names
-    patient_match = re.search(r'(?<=Patient:\s)[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)', text)
-    provider_match = re.search(r'(?<=Provider:\sDr\.\s)([A-Za-z]+(\s[A-Za-z]+)*)(?=,\sMD)', text)
-    patient_name_match = re.search(r'(?<=Patient name:\s)[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)', text)
-    provider_name_match = re.search(r'(?<=Provider name:\sDr\.\s)([A-Za-z]+(\s[A-Za-z]+)*)(?=,\sMD)', text)
+    patient_name_match = re.search(r'(Patient|Patient name):\s[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)', text)
+    provider_name_match = re.search(r'(Provider|Provider name):\sDr\.\s([A-Za-z]+(\s[A-Za-z]+)*)(?=,\sMD)', text)
 
-    patient_name = (patient_name_match or patient_match)
-    patient_name = patient_name.group(0) if patient_name else None
-
-    provider_name = (provider_name_match or provider_match)
-    provider_name = provider_name.group(1) if provider_name else None
+    patient_name = patient_name_match.group(0) if patient_name_match else None
+    provider_name = provider_name_match.group(0) if provider_name_match else None
     
     # Define PHI patterns and replacements
     phi_patterns = {
-        r'(?<=Patient:\s)[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)': '*name*',  # Name (First, last, optional middle)
-        r'(?<=Patient name:\s)[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$)': '*name*',  # Name (First, last, optional middle), long label
-        r'(?<=Date of Birth:\s)\d{2}/\d{2}/\d{4}': '*dob*',  # Date of birth
-        r'(?<=DoB:\s)\d{2}/\d{2}/\d{4}': '*dob*',  # DoB
+        r'(Patient|Patient name):\s(?:[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}(?=\n|$))': r'\1: *name*',  # Name (First, last, optional middle)
+        r'(Date of Birth|DoB):\s(?:\d{2}/\d{2}/\d{4})': r'\1: *dob*',  # Date of birth
         r'(?<=Medical Record Number:\s)\d+': '*mrn*', # Medical record number
-        r'\b[\d\*]{3}-[\d\*]{2}-\d{4}\b': '*ssn*',  # SSN allowing * in any of the first 5 digits
+        r'(SSN|Social Security Number):\s(?:[\d\*]{3}-[\d\*]{2}-\d{4})': r'\1: *ssn*',  # SSN line (keep label)
         r'(?<=Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})': '*address*',  # Address
         r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b': '*phone*',  # Phone number (parentheses optional)
         r'\b[\w.-]+@[\w.-]+\.\w+\b': '*email*',  # Email address
-        r'(SSN|Social Security Number):\s(?:[\d\*]{3}-[\d\*]{2}-\d{4})': r'\1: *ssn*',  # SSN line (keep label)
-        r'(?<=Provider:\s)Dr\.\s[\w\s]+,\sMD': '*name*',  # Doctor's Name
-        r'(?<=Provider name:\s)Dr\.\s[\w\s]+,\sMD': '*name*',  # Doctor's name, long label
-        r'Hospital name:\s.+': 'Hospital name: *hospital*',  # Hospital name
-        r'Allergies:\n(?:- .+\n)+': 'Allergies:\n*allergies*\n',  # Allergies block
-        r'Lab Results \(\d{2}/\d{2}/\d{4}\):\n(?:- .+\n)+': 'Lab Results: \n*labs*\n',  # Lab results block with date
-        r'Medicaid account:\s(?:\d{4}\s){3}\d{4}': 'Medicaid account: *account*',  # Medicaid account number
-        r'Social worker:\s(?:Dr\.|Mr\.|Ms\.|Mrs\.)?\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\sMD)?': 'Social worker: *name*',  # Social worker name
+        r'(Provider|Provider name):\s(?:Dr\.\s[\w\s]+,\sMD)': r'\1: *name*',  # Doctor's Name
+        r'(Hospital name:)\s.+': r'\1 *hospital*',  # Hospital name
+        r'(Allergies:)\n(?:- .+\n)+': r'\1\n*allergies*\n',  # Allergies block
+        r'(Lab Results) \(\d{2}/\d{2}/\d{4}\):\n(?:- .+\n)+': r'\1: \n*labs*\n',  # Lab results block with date
+        r'(Medicaid account:)\s(?:\d{4}\s){3}\d{4}': r'\1 *account*',  # Medicaid account number
+        r'(Social worker:)\s(?:Dr\.|Mr\.|Ms\.|Mrs\.)?\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\sMD)?': r'\1 *name*',  # Social worker name
     }
     
     # Apply regex substitutions
