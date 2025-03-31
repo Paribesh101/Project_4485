@@ -1,6 +1,7 @@
 import re
 import argparse
 import random
+from cryptography.fernet import Fernet
 
 # extract full names from initial patient/provider lines
 def extract_names(text):
@@ -62,12 +63,20 @@ def redact_names(text, name, title_pattern):
 def generate_record_id():
     return f"PHI-{random.randint(1000000000, 9999999999)}"
 
+# encrypt a list of removed items
+def encrypt_removed_items(items):
+    key = Fernet.generate_key()
+    cipher_suite = Fernet(key)
+    joined = '\n'.join(items).encode()
+    encrypted = cipher_suite.encrypt(joined)
+    return key, encrypted, cipher_suite
+
 def redact_phi(input_file, output_file):
     with open(input_file, 'r', encoding='utf-8', errors='ignore') as file:
         text = file.read()
 
     record_id = generate_record_id()
-    text = f"{record_id}\n{text}\n"
+    text = f"{record_id}\n{text}"
 
     patient_name, provider_name = extract_names(text)
 
@@ -82,7 +91,8 @@ def redact_phi(input_file, output_file):
         (r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
         (r'(Provider|Provider name):\s(Dr\.\s[\w\s]+,\sMD)', r'\1: *name*'),
         (r'(Hospital name:)\s(.+)', r'\1 *hospital*'),
-        (r'(Allergies:)\n((?:- .+\n)+)', r'\1\n*allergies*\n'),
+        (r'(?m)^-\s*Morphine.*', '*allergy*'),
+        (r'(?m)^-\s*Sulfa drugs.*', '*allergy*'),
         (r'(Lab Results)(?:\s\(\d{2}/\d{2}/\d{4}\)):\n((?:- .+\n)+)', r'\1: \n*labs*\n'),
         (r'(Medicaid account:)\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
         (r'(Social worker:)\s((?:Dr\.|Mr\.|Ms\.|Mrs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\sMD)?)', r'\1 *name*'),
@@ -109,9 +119,15 @@ def redact_phi(input_file, output_file):
 
     print(f"Redacted file saved as {output_file}")
     print("Record ID:", record_id)
-    print("Removed Items:")
-    for item in removed_items:
-        print(f"- {item}")
+
+    key, encrypted, cipher_suite = encrypt_removed_items(removed_items)
+    print("Encryption Key:", key.decode())
+    print("Encrypted Removed Items:", encrypted.decode())
+
+    # debug check: decrypt to verify content
+    decrypted = cipher_suite.decrypt(encrypted).decode()
+    print("Decrypted Removed Items (for debug):")
+    print(decrypted)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Redact PHI from a text file.")
