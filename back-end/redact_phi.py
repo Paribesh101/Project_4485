@@ -82,14 +82,12 @@ def redact_phi(input_file, output_file):
 
     # patterns must use group 2 for the sensitive value
     phi_patterns = [
-        (r'(Patient|Patient name):\s(.+)', r'\1: *name*'),
         (r'(Date of Birth|DoB):\s(\d{2}/\d{2}/\d{4})', r'\1: *dob*'),
         (r'(?<=Medical Record Number:\s)\d+', '*mrn*'),
         (r'(SSN|Social Security Number):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
-        (r'(?<=Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', '*address*'),
+        (r'(Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
         (r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b', '*phone*'),
         (r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
-        (r'(Provider|Provider name):\s(Dr\.\s[\w\s]+,\sMD)', r'\1: *name*'),
         (r'(Hospital name:)\s(.+)', r'\1 *hospital*'),
         (r'(?m)^-\s*Morphine.*', '*allergy*'),
         (r'(?m)^-\s*Sulfa drugs.*', '*allergy*'),
