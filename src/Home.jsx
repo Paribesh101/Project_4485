@@ -1,11 +1,9 @@
-import React from 'react';
-import Input from '@mui/joy/Input';
-import Button from '@mui/material/Button';
-import { borderRadius, fontSize } from '@mui/system';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
-import axios from 'axios';
-import { useState, useRef } from "react";
-import './styles.css';
+import React, { useState, useRef } from "react";
+import Input from "@mui/joy/Input";
+import Button from "@mui/material/Button";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import axios from "axios";
+import "./styles.css";
 
 function Home() {
   const [fileName, setFileName] = useState("");
@@ -49,21 +47,31 @@ function Home() {
 
       setDeidentifiedData(response.data.deidentifiedFile);
       setRecordId(response.data.recordId);
+      console.log("Upload successful:", response.data);
     } catch (err) {
-      setError(err.response?.data?.error || "An error occurred while uploading the file");
+      setError(
+        err.response?.data?.error || "An error occurred while uploading the file"
+      );
+      console.error("Upload error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle Download
+  // Handle download of de-identified file
   const handleDownload = async () => {
-    if (!deidentifiedData) return;
+    if (!deidentifiedData) {
+      setError("No de-identified data available to download");
+      return;
+    }
     try {
       const encodedFileName = encodeURIComponent(deidentifiedData); // Encode the filename
-      const response = await axios.get(`http://localhost:8000/download/${encodedFileName}`, {
-        responseType: "blob",
-      });
+      const response = await axios.get(
+        `http://localhost:8000/download/${encodedFileName}`,
+        {
+          responseType: "blob",
+        }
+      );
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -73,27 +81,43 @@ function Home() {
       link.remove();
     } catch (err) {
       console.error("Download error:", err);
-      setError("Failed to download the de-identified file: " + (err.response?.data?.error || err.message));
+      setError(
+        "Failed to download the de-identified file: " +
+          (err.response?.data?.error || err.message)
+      );
     }
   };
 
-  // Handle Download of Original File
-  const handleDownloadOriginal = async () => {
-    if (!recordId) return;
+  // Handle re-identification
+  const handleReidentify = async () => {
+    if (!recordId) {
+      setError("No record ID available. Please upload a file first.");
+      return;
+    }
     try {
-      const response = await axios.get(`http://localhost:8000/download-original/${recordId}`, {
-        responseType: "blob",
-      });
+      const response = await axios.post(
+        `http://localhost:8000/reidentify/${recordId}`,
+        null, // No body needed for POST
+        {
+          responseType: "blob", // Expect a file response
+        }
+      );
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `original-${recordId}.txt`);
+      link.setAttribute("download", `reidentified-${recordId}.txt`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      setError(null); // Clear any previous errors
+      console.log("Re-identification successful for recordId:", recordId);
     } catch (err) {
-      console.error("Download original file error:", err);
-      setError("Failed to download the original file: " + (err.response?.data?.error || err.message));
+      console.error("Re-identify error:", err);
+      setError(
+        "Failed to re-identify the record: " +
+          (err.response?.status ? `${err.response.status} - ` : "") +
+          (err.response?.data?.error || err.message)
+      );
     }
   };
 
@@ -106,20 +130,27 @@ function Home() {
         value={fileName}
         readOnly
       />
-      <AttachFileIcon className="icon" onClick={() => fileInputRef.current?.click()} />
-      <input type="file" ref={fileInputRef} onChange={handleChange} style={{ display: 'none' }} />
+      <AttachFileIcon
+        className="icon"
+        onClick={() => fileInputRef.current?.click()}
+      />
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleChange}
+        style={{ display: "none" }}
+      />
       <Button
         variant="contained"
-        onClick={handleFileUpload}
         className="button"
         sx={{
-          backgroundColor: 'primary.main',
-          position: 'absolute',
-          top: '45%',
-          right: '30%',
-          borderRadius: '20px',
+          backgroundColor: "primary.main",
+          position: "absolute",
+          top: "48%",
+          right: "27.5%",
+          borderRadius: "20px",
           padding: 1.5,
-          '&hover': { backgroundColor: 'secondary.dark' }
+          "&hover": { backgroundColor: "secondary.dark" },
         }}
         type="submit"
         disabled={loading}
@@ -129,14 +160,12 @@ function Home() {
 
       {/* Display error message if any */}
       {error && (
-        <div style={{ marginTop: '20px', color: 'red' }}>
-          {error}
-        </div>
+        <div style={{ marginTop: "20px", color: "red" }}>{error}</div>
       )}
 
-      {/* Display buttons to download de-identified and original files after upload */}
+      {/* Display buttons to download de-identified and re-identified files after upload */}
       {deidentifiedData && recordId && (
-        <div style={{ marginTop: '20px' }}>
+        <div style={{ marginTop: "65px", marginLeft: "760px" }}>
           <Button
             variant="contained"
             sx={{ marginRight: 2 }}
@@ -148,10 +177,10 @@ function Home() {
           <Button
             variant="contained"
             color="secondary"
-            onClick={handleDownloadOriginal}
+            onClick={handleReidentify}
             className="download"
           >
-            Download Original File
+            Re-identify Record
           </Button>
         </div>
       )}

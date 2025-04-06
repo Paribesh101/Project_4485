@@ -1,319 +1,369 @@
+// Import required modules using ES Modules
 import express from "express";
+import cors from "cors";
 import mongoose from "mongoose";
 import multer from "multer";
-import { spawn } from "child_process";
 import path from "path";
-import cors from "cors";
-import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 import fs from "fs";
-import { Readable } from "stream";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { spawn } from "child_process";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import fernet from "fernet";
+import os from "os";
+import dotenv from "dotenv";
 
 // Load environment variables from .env file
 dotenv.config();
 
-// Define __dirname and __filename for ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Validate required environment variables
+const requiredEnvVars = [
+  "S3_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "S3_BUCKET",
+  "MONGOURI",
+  "PORT",
+];
 
-// Configure AWS SDK v3 S3 Client
+const missingEnvVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error(
+    "Error: Missing required environment variables:",
+    missingEnvVars.join(", ")
+  );
+  process.exit(1);
+}
+
+// Initialize Express app
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Schema for storing de-identified file metadata
+const patientSchema = new mongoose.Schema({
+  recordId: String,
+  fileReference: String,
+  encryptedPii: String,
+  encryptionKey: String,
+});
+const PatientModel = mongoose.model("Patient", patientSchema);
+
+// Configure AWS S3 Client
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
+  region: process.env.S3_REGION,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
-// Initialize Express app
-const app = express();
-
-// Middleware
-app.use(cors({ origin: "http://localhost:3000" })); // Allow requests from frontend
-app.use(express.json());
-
-// Multer setup for file uploads (store in memory instead of disk)
+// Configure Multer to store uploaded files in memory
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
-// MongoDB connection using MONGOURI from .env
-mongoose.connect(process.env.MONGOURI)
-  .then(() => console.log("Database Connected"))
-  .catch((err) => console.error("Database connection error:", err));
+// Helper function to convert S3 stream to string
+const streamToString = (stream) => {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", (chunk) => chunks.push(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+  });
+};
 
-// Patient Schema and Model
-const patientSchema = new mongoose.Schema({
-  originalName: String,
-  originalDOB: String,
-  originalMRN: String,
-  originalVisitDate: String,
-  originalAddress: String,
-  originalPhone: String,
-  originalEmail: String,
-  originalSSN: String,
-  originalProvider: String,
-  fileReference: String,
-  originalFileReference: String,
-  recordId: String,
-  encryptedPii: String,
-  encryptionKey: String,
-});
+// Helper function to escape regex special characters
+const escapeRegExp = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
-const PatientModel = mongoose.model("Patient", patientSchema);
-
-// File Upload and De-identification Endpoint
+// Route to handle file upload and de-identification
 app.post("/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const inputBuffer = req.file.buffer;
+  const tempDir = os.tmpdir();
+  const tempInputFile = path.join(tempDir, `temp-${Date.now()}-${req.file.originalname}`);
+  const outputFilePath = path.join(
+    process.cwd(),
+    `deidentified-${Date.now()}-${req.file.originalname}`
+  );
+
   try {
-    console.log("Received upload request");
-    console.log("Request body:", req.body);
-    console.log("Request file:", req.file);
+    // Write the buffer to a temporary file
+    fs.writeFileSync(tempInputFile, inputBuffer);
+    console.log(`Temporary input file written to: ${tempInputFile}`);
 
-    if (!req.file) {
-      console.log("No file uploaded in the request");
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    console.log(`File received: ${req.file.originalname}`);
-    console.log(`File size: ${req.file.size} bytes`);
-
-    // Upload the original file to S3
+    // Upload the original file to S3 temporarily for processing
     const originalS3Key = `original/${Date.now()}-${req.file.originalname}`;
-    const originalS3Params = {
+    const uploadOriginalParams = {
       Bucket: process.env.S3_BUCKET,
       Key: originalS3Key,
-      Body: req.file.buffer,
-      ContentType: "text/plain",
+      Body: inputBuffer,
     };
+    await s3Client.send(new PutObjectCommand(uploadOriginalParams));
+    console.log(`Original file uploaded to S3: ${originalS3Key}`);
 
-    try {
-      const uploadOriginalCommand = new PutObjectCommand(originalS3Params);
-      await s3Client.send(uploadOriginalCommand);
-      console.log(`Original file uploaded to S3: ${originalS3Key}`);
-    } catch (err) {
-      console.error(`Error uploading original file to S3: ${err.message}`);
-      return res.status(500).json({ error: "Failed to upload original file to S3", details: err.message });
-    }
+    // Call the Python script to de-identify the file
+    const pythonScriptPath = path.join(process.cwd(), "redact_phi.py");
+    console.log(`Running Python script: ${pythonScriptPath}`);
+    const pythonProcess = spawn("python3", [
+      pythonScriptPath,
+      tempInputFile,
+      outputFilePath,
+    ]);
 
-    // Run the de-identification script
-    const pythonScriptPath = path.join(__dirname, "redact_phi.py");
-    if (!fs.existsSync(pythonScriptPath)) {
-      console.log("De-identification script not found");
-      return res.status(500).json({ error: "De-identification script (redact_phi.py) not found" });
-    }
+    let pythonOutput = "";
+    let pythonError = "";
 
-    // Create temporary files for input and output
-    const tempInputFile = path.join(__dirname, `temp-input-${Date.now()}.txt`);
-    const tempOutputFile = path.join(__dirname, `temp-output-${Date.now()}.txt`);
-
-    try {
-      fs.writeFileSync(tempInputFile, req.file.buffer.toString());
-
-      console.log(`Running Python script: ${pythonScriptPath} with input: ${tempInputFile} and output: ${tempOutputFile}`);
-      const pythonProcess = spawn("python3", [pythonScriptPath, tempInputFile, tempOutputFile]);
-
-      let pythonOutput = "";
-      let pythonError = "";
-
-      pythonProcess.stdout.on("data", (data) => {
-        pythonOutput += data.toString();
-        console.log(`Python output: ${data}`);
-      });
-
-      pythonProcess.stderr.on("data", (data) => {
-        pythonError += data.toString();
-        console.error(`Python error: ${data}`);
-      });
-
-      pythonProcess.on("error", (err) => {
-        console.error(`Failed to start Python process: ${err.message}`);
-        res.status(500).json({ error: "Failed to run de-identification script" });
-      });
-
-      pythonProcess.on("close", async (code) => {
-        console.log(`Python process exited with code ${code}`);
-        if (code === 0) {
-          let recordId = null;
-          let encryptedPii = null;
-          let encryptionKey = null;
-
-          const outputLines = pythonOutput.split('\n');
-          for (const line of outputLines) {
-            if (line.startsWith("Record ID:")) {
-              recordId = line.split("Record ID: ")[1].trim();
-            } else if (line.startsWith("Encryption Key:")) {
-              encryptionKey = line.split("Encryption Key: ")[1].trim();
-            } else if (line.startsWith("Encrypted Removed Items:")) {
-              encryptedPii = line.split("Encrypted Removed Items: ")[1].trim();
-            }
-          }
-
-          if (!recordId || !encryptedPii || !encryptionKey) {
-            console.error("Failed to extract record_id, encrypted_pii, or encryption_key from Python script output");
-            return res.status(500).json({ error: "Failed to parse de-identification script output" });
-          }
-
-          let deidentifiedContent;
-          try {
-            deidentifiedContent = fs.readFileSync(tempOutputFile, 'utf8');
-            console.log(`De-identified content read from ${tempOutputFile}`);
-          } catch (err) {
-            console.error(`Error reading de-identified file: ${err.message}`);
-            return res.status(500).json({ error: "Failed to read de-identified file", details: err.message });
-          }
-
-          const deidentifiedFileName = `deidentified-${Date.now()}-${req.file.originalname}`;
-          const deidentifiedS3Key = `deidentified/${deidentifiedFileName}`;
-          const deidentifiedS3Params = {
-            Bucket: process.env.S3_BUCKET,
-            Key: deidentifiedS3Key,
-            Body: deidentifiedContent,
-            ContentType: "text/plain",
-          };
-
-          try {
-            const uploadDeidentifiedCommand = new PutObjectCommand(deidentifiedS3Params);
-            await s3Client.send(uploadDeidentifiedCommand);
-            console.log(`De-identified file uploaded to S3: ${deidentifiedS3Key}`);
-          } catch (err) {
-            console.error(`Error uploading de-identified file to S3: ${err.message}`);
-            return res.status(500).json({ error: "Failed to upload de-identified file to S3", details: err.message });
-          }
-
-          const patientToStore = {
-            originalName: null,
-            originalDOB: null,
-            originalMRN: null,
-            originalVisitDate: null,
-            originalAddress: null,
-            originalPhone: null,
-            originalEmail: null,
-            originalSSN: null,
-            originalProvider: null,
-            fileReference: deidentifiedS3Key,
-            originalFileReference: originalS3Key,
-            recordId: recordId,
-            encryptedPii: encryptedPii,
-            encryptionKey: encryptionKey,
-          };
-
-          try {
-            const savedPatient = await PatientModel.create(patientToStore);
-            console.log("Patient data stored in database:", savedPatient);
-          } catch (err) {
-            console.error(`Error storing patient data in database: ${err.message}`);
-            return res.status(500).json({ error: "Failed to store patient data in database", details: err.message });
-          }
-
-          res.status(200).json({
-            message: "File de-identified and stored successfully",
-            deidentifiedFile: deidentifiedS3Key,
-            recordId: recordId,
-          });
-        } else {
-          console.error(`Python process failed with code ${code}`);
-          console.error(`Python error output: ${pythonError}`);
-          res.status(500).json({ error: "De-identification failed", details: pythonError });
-        }
-
-        try {
-          if (fs.existsSync(tempInputFile)) fs.unlinkSync(tempInputFile);
-          if (fs.existsSync(tempOutputFile)) fs.unlinkSync(tempOutputFile);
-          console.log("Temporary files cleaned up");
-        } catch (err) {
-          console.error(`Error cleaning up temporary files: ${err.message}`);
-        }
-      });
-    } catch (err) {
-      console.error(`Error setting up temporary files: ${err.message}`);
-      res.status(500).json({ error: "Failed to set up temporary files", details: err.message });
-
-      try {
-        if (fs.existsSync(tempInputFile)) fs.unlinkSync(tempInputFile);
-        if (fs.existsSync(tempOutputFile)) fs.unlinkSync(tempOutputFile);
-      } catch (cleanupErr) {
-        console.error(`Error during cleanup: ${cleanupErr.message}`);
+    pythonProcess.stdout.on("data", (data) => {
+      const output = data.toString();
+      pythonOutput += output;
+      const lines = output.split("\n");
+      const filteredLines = lines.filter(
+        (line) => !line.startsWith("Decrypted Removed Items (for debug):")
+      );
+      const filteredOutput = filteredLines.join("\n");
+      if (filteredOutput.trim()) {
+        console.log(`Python output: ${filteredOutput}`);
       }
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      pythonError += data.toString();
+      console.error(`Python error: ${data}`);
+    });
+
+    pythonProcess.on("close", async (code) => {
+      // Clean up the temporary input file
+      if (fs.existsSync(tempInputFile)) {
+        fs.unlinkSync(tempInputFile);
+        console.log(`Cleaned up temporary input file: ${tempInputFile}`);
+      }
+
+      if (code === 0) {
+        // Parse the Python script output
+        let recordId, encryptedPii, encryptionKey;
+        const lines = pythonOutput.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("Record ID: ")) {
+            recordId = line.replace("Record ID: ", "").trim();
+          } else if (line.startsWith("Encrypted Removed Items: ")) {
+            encryptedPii = line.replace("Encrypted Removed Items: ", "").trim();
+          } else if (line.startsWith("Encryption Key: ")) {
+            encryptionKey = line.replace("Encryption Key: ", "").trim();
+          }
+        }
+
+        if (!recordId || !encryptedPii || !encryptionKey) {
+          console.error("Failed to parse Python script output:", pythonOutput);
+          throw new Error("Failed to parse Python script output");
+        }
+        console.log(`Parsed from Python: recordId=${recordId}, encryptedPii=${encryptedPii}, encryptionKey=${encryptionKey}`);
+
+        // Read the de-identified content
+        const deidentifiedContent = fs.readFileSync(outputFilePath, "utf8");
+        console.log(`De-identified file created at: ${outputFilePath}`);
+
+        // Upload the de-identified file to S3
+        const deidentifiedS3Key = `deidentified/deidentified-${Date.now()}-${req.file.originalname}`;
+        const uploadDeidentifiedParams = {
+          Bucket: process.env.S3_BUCKET,
+          Key: deidentifiedS3Key,
+          Body: deidentifiedContent,
+        };
+        await s3Client.send(new PutObjectCommand(uploadDeidentifiedParams));
+        console.log(`De-identified file uploaded to S3: ${deidentifiedS3Key}`);
+
+        // Store metadata in MongoDB
+        const patientData = {
+          recordId: recordId,
+          fileReference: deidentifiedS3Key,
+          encryptedPii: encryptedPii,
+          encryptionKey: encryptionKey,
+        };
+        const savedPatient = await PatientModel.create(patientData);
+        console.log("Saved patient data to MongoDB:", savedPatient);
+
+        // Clean up temporary output file
+        if (fs.existsSync(outputFilePath)) {
+          fs.unlinkSync(outputFilePath);
+          console.log(`Cleaned up temporary output file: ${outputFilePath}`);
+        }
+
+        res.json({
+          message: "File de-identified and stored successfully",
+          deidentifiedFile: deidentifiedS3Key,
+          recordId: recordId,
+        });
+      } else {
+        console.error(`Python process failed with code ${code}, error: ${pythonError}`);
+        res.status(500).json({ error: "De-identification failed", details: pythonError });
+      }
+    });
+  } catch (err) {
+    console.error(`Error during upload: ${err.message}`);
+    // Clean up if temporary files exist
+    if (fs.existsSync(tempInputFile)) {
+      fs.unlinkSync(tempInputFile);
     }
-  } catch (error) {
-    console.error(`Error in /upload endpoint: ${error.message}`);
-    res.status(500).json({ error: "Server error", details: error.message });
+    if (fs.existsSync(outputFilePath)) {
+      fs.unlinkSync(outputFilePath);
+    }
+    res.status(500).json({ error: "Server error", details: err.message });
   }
 });
 
-// Download De-identified File Endpoint
+// Route to download the de-identified file
 app.get("/download/:filename", async (req, res) => {
-  const s3Key = req.params.filename;
-  console.log(`Download request for de-identified file with S3 key: ${s3Key}`);
+  const filename = decodeURIComponent(req.params.filename);
+  const s3Params = {
+    Bucket: process.env.S3_BUCKET,
+    Key: filename,
+  };
 
   try {
-    const s3Params = {
-      Bucket: process.env.S3_BUCKET,
-      Key: s3Key,
-    };
-
+    console.log(`Downloading file from S3: ${filename}`);
     const getObjectCommand = new GetObjectCommand(s3Params);
     const s3Response = await s3Client.send(getObjectCommand);
-
-    const nodeStream = Readable.from(s3Response.Body);
-
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(s3Key)}"`);
-    res.setHeader('Content-Type', 'text/plain');
-
-    nodeStream.pipe(res);
-
-    nodeStream.on('error', (err) => {
-      console.error(`Error downloading file from S3: ${err.message}`);
-      res.status(500).json({ error: "Error downloading file", details: err.message });
-    });
+    s3Response.Body.pipe(res);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename.split("/").pop()}"`);
+    res.setHeader("Content-Type", "text/plain");
   } catch (err) {
-    console.error(`Error retrieving file from S3: ${err.message}`);
-    res.status(404).json({ error: "File not found in S3", details: err.message });
+    console.error(`Error downloading file: ${err.message}`);
+    res.status(500).json({ error: "File not found in S3", details: err.message });
   }
 });
 
-// Download Original File Endpoint
-app.get("/download-original/:recordId", async (req, res) => {
+// Route to retrieve all patient records (for debugging)
+app.get("/patients", async (req, res) => {
+  try {
+    console.log("Fetching all patient records from MongoDB");
+    const patients = await PatientModel.find().lean();
+    if (!patients || patients.length === 0) {
+      console.log("No patient records found in MongoDB");
+      return res.status(404).json({ message: "No patient records found" });
+    }
+    console.log(`Retrieved ${patients.length} patient records`);
+    res.json({
+      message: "Patient records retrieved successfully",
+      data: patients,
+    });
+  } catch (err) {
+    console.error(`Error retrieving patient records: ${err.message}`);
+    res.status(500).json({ error: "Failed to retrieve patient records", details: err.message });
+  }
+});
+
+// Route to re-identify the record (fixed version)
+app.post("/reidentify/:recordId", async (req, res) => {
   const recordId = req.params.recordId;
-  console.log(`Download request for original file with recordId: ${recordId}`);
+  console.log(`Re-identification request for recordId: ${recordId}`);
 
   try {
-    const patient = await PatientModel.findOne({ recordId: recordId }).lean();
-    if (!patient || !patient.originalFileReference) {
-      console.log(`Original file not found for recordId: ${recordId}`);
-      return res.status(404).json({ error: "Original file not found" });
+    // 1. Find the record in MongoDB
+    const patient = await PatientModel.findOne({ recordId }).lean();
+    if (!patient) {
+      return res.status(404).json({ 
+        error: "Record not found", 
+        details: `No record with ID: ${recordId}` 
+      });
     }
 
-    const s3Key = patient.originalFileReference;
+    // 2. Verify required fields exist
+    if (!patient.fileReference || !patient.encryptedPii || !patient.encryptionKey) {
+      return res.status(400).json({
+        error: "Incomplete record",
+        details: "Missing required fields in patient record"
+      });
+    }
+
+    // 3. Get the de-identified file from S3
     const s3Params = {
       Bucket: process.env.S3_BUCKET,
-      Key: s3Key,
+      Key: patient.fileReference
     };
+    
+    let cleanedContent;
+    try {
+      const { Body } = await s3Client.send(new GetObjectCommand(s3Params));
+      cleanedContent = await streamToString(Body);
+      if (typeof cleanedContent !== 'string') {
+        throw new Error('S3 content is not a string');
+      }
+    } catch (s3Err) {
+      return res.status(404).json({
+        error: "File not found in S3",
+        details: s3Err.message
+      });
+    }
 
-    const getObjectCommand = new GetObjectCommand(s3Params);
-    const s3Response = await s3Client.send(getObjectCommand);
+    // 4. Decrypt the PII data
+    let removedItems;
+    try {
+      const secret = new fernet.Secret(patient.encryptionKey);
+      const token = new fernet.Token({
+        secret,
+        token: patient.encryptedPii,
+        ttl: 0
+      });
+      const decrypted = token.decode();
+      removedItems = decrypted.split('\n').filter(Boolean);
+      console.log('Decrypted items:', removedItems);
+    } catch (decryptErr) {
+      return res.status(500).json({
+        error: "Decryption failed",
+        details: decryptErr.message
+      });
+    }
 
-    const nodeStream = Readable.from(s3Response.Body);
+    // 5. Re-identify the content
+    let reidentifiedContent = cleanedContent;
+    const placeholders = [
+      '*name*', '*dob*', '*mrn*', '*ssn*', '*address*',
+      '*phone*', '*email*', '*hospital*', '*allergy*',
+      '*labs*', '*account*'
+    ];
 
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(s3Key)}"`);
+    // Replace placeholders in order
+    for (let i = 0; i < Math.min(removedItems.length, placeholders.length); i++) {
+      const placeholder = placeholders[i];
+      const value = removedItems[i];
+      reidentifiedContent = reidentifiedContent.replace(
+        new RegExp(escapeRegExp(placeholder), 'g'),
+        value
+      );
+    }
+
+    // 6. Send the re-identified content
     res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="reidentified-${recordId}.txt"`);
+    res.send(reidentifiedContent);
 
-    nodeStream.pipe(res);
-
-    nodeStream.on('error', (err) => {
-      console.error(`Error downloading file from S3: ${err.message}`);
-      res.status(500).json({ error: "Error downloading file", details: err.message });
-    });
   } catch (err) {
-    console.error(`Error retrieving file from S3: ${err.message}`);
-    res.status(404).json({ error: "File not found in S3", details: err.message });
+    console.error(`Re-identification error: ${err.stack}`);
+    res.status(500).json({
+      error: "Internal server error",
+      details: err.message
+    });
   }
 });
 
-// Start the server
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+// Connect to MongoDB and start the server
+(async () => {
+  try {
+    await mongoose.connect(process.env.MONGOURI, {
+      serverSelectionTimeoutMS: 30000,
+    });
+    console.log("Database Connected");
+
+    const PORT = process.env.PORT || 8000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error(`MongoDB connection error: ${err.message}`);
+    process.exit(1);
+  }
+})();
