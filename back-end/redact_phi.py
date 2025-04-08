@@ -86,6 +86,7 @@ def redact_phi(input_file, output_file):
         (r'(Medical Record Number|Medical record number):\s*([\w-]+)', r'\1: *mrn*'),
         (r'(SSN|Social Security Number):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
         (r'(Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
+        (r'(Fax no\.|Fax No\.):\s*\(?\d{3}\)?[-\s]?\d{3}-\d{4}', r'\1: *fax*'),
         (r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b', '*phone*'),
         (r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
         (r'(Health Plan Beneficiary Number|Health plan beneficiary number):\s*([\d-]+)', r'\1: *beneficiary*'),
