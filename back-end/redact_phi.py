@@ -121,8 +121,8 @@ def redact_phi(input_file, output_file):
             seen.add(item)
 
     text = redact_text(text, phi_patterns)
-    text = redact_names(text, patient_name, r'\b(Mr\.|Ms\.|Mrs\.)\s*')
-    text = redact_names(text, provider_name, r'\b(Dr\.)\s*')
+    text = redact_names(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
+    text = redact_names(text, provider_name, r'\b([Dd]r\.)\s*')
 
     with open(output_file, 'w', encoding='utf-8') as file:
         file.write(text)
