@@ -5,8 +5,8 @@ from cryptography.fernet import Fernet
 
 # extract full names from initial patient/provider lines
 def extract_names(text):
-    patient_match = re.search(r'(Patient|Patient name|Patient Name):\s([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})(?=\n|$)', text)
-    provider_match = re.search(r'(Provider|Provider name|Provider Name):\sDr\.\s([A-Za-z]+(?:\s[A-Za-z]+)*)(?=,\sMD)', text)
+    patient_match = re.search(r'([Pp]atient|[Pp]atient [Nn]ame):\s([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})(?=\n|$)', text)
+    provider_match = re.search(r'([Pp]rovider|[Pp]rovider [Nn]ame):\s[Dd]r\.\s([A-Za-z]+(?:\s[A-Za-z]+)*)(?=,\s[Mm][Dd])', text)
     patient_name = patient_match.group(2) if patient_match else None
     provider_name = provider_match.group(2) if provider_match else None
     return patient_name, provider_name
@@ -82,34 +82,35 @@ def redact_phi(input_file, output_file):
 
     # patterns must use group 2 for the sensitive value
     phi_patterns = [
-        (r'(Date of Birth|DoB):\s(\d{2}/\d{2}/\d{4})', r'\1: *dob*'),
-        (r'(Medical Record Number|Medical record number):\s*([\w-]+)', r'\1: *mrn*'),
-        (r'(SSN|Social Security Number):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
-        (r'(Address:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
-        (r'(Fax no\.|Fax No\.):\s*\(?\d{3}\)?[-\s]?\d{3}-\d{4}', r'\1: *fax*'),
+        (r'([Dd]ate [Oo]f [Bb]irth|[Dd][Oo][Bb]):\s(\d{2}/\d{2}/\d{4})', r'\1: *dob*'),
+        (r'([Mm]edical [Rr]ecord [Nn]umber):\s*([\w-]+)', r'\1: *mrn*'),
+        (r'([Ss][Ss][Nn]|[Ss]ocial [Ss]ecurity [Nn]umber):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
+        (r'([Aa]ddress:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
+        (r'([Ff]ax [Nn]o\.?):\s*\(?\d{3}\)?[-\s]?\d{3}-\d{4}', r'\1: *fax*'),
         (r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b', '*phone*'),
         (r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
-        (r'(Health Plan Beneficiary Number|Health plan beneficiary number):\s*([\d-]+)', r'\1: *beneficiary*'),
-        (r'(Device Identifier|Device identifier):\s*([\w-]+)', r'\1: *device*'),
-        (r'(Pacemaker Serial Numbers|Pacemaker serial numbers):\s*([\w-]+)', r'\1: *serial*'),
-        (r'(Code|code):\s*(\d+)', r'\1: *code*'),
-        (r'(Hospital name|Hospital Name):\s(.+)', r'\1 *hospital*'),
-        (r'(Certificate Number|Certificate number):\s*([\w-]+)', r'\1: *certificate*'),
-        (r'(Health Insurance|Health insurance):\s*([\w-]+)', r'\1: *insurance*'),
-        (r'(Group No\.|Group no\.):\s*(\d+)', r'\1: *group*'),
-        (r'(URL|url):\s*(\S+)', r'\1: *url*'),
+        (r'([Hh]ealth [Pp]lan [Bb]eneficiary [Nn]umber):\s*([\d-]+)', r'\1: *beneficiary*'),
+        (r'([Dd]evice [Ii]dentifier):\s*([\w-]+)', r'\1: *device*'),
+        (r'([Pp]acemaker [Ss]erial [Nn]umbers):\s*([\w-]+)', r'\1: *serial*'),
+        (r'([Cc]ode):\s*(\d+)', r'\1: *code*'),
+        (r'([Hh]ospital [Nn]ame):\s(.+)', r'\1 *hospital*'),
+        (r'([Cc]ertificate [Nn]umber):\s*([\w-]+)', r'\1: *certificate*'),
+        (r'([Hh]ealth [Ii]nsurance):\s*([\w-]+)', r'\1: *insurance*'),
+        (r'([Gg]roup [Nn]o\.?):\s*(\d+)', r'\1: *group*'),
+        (r'([Uu][Rr][Ll]):\s*(\S+)', r'\1: *url*'),
         (r'\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\b', '*ip*'),
-        (r'(License Number|license number):\s*([\w-]+)', r'\1: *license*'),
+        (r'([Ll]icense [Nn]umber):\s*([\w-]+)', r'\1: *license*'),
         (r'(?m)^-\s*Morphine.*', '*allergy*'),
         (r'(?m)^-\s*Sulfa drugs.*', '*allergy*'),
-        (r'(Lab Results)(?:\s\(\d{2}\/\d{2}\/\d{4}\)):([\s\S]*)(?=Follow-up Appointment?)', r'\1: *labs*\n\n'),
-        (r'(Medicaid account|Medical Account|Account):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
-        (r'(Social worker|Social Worker):\s((?:Dr\.|Mr\.|Ms\.|Mrs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\sMD)?)(?=\n)', r'\1 *name*'),
+        (r'([Ll]ab [Rr]esults)(?:\s\(\d{2}\/\d{2}\/\d{4}\)):([\s\S]*)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
+        (r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
+        (r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
+        #(r'\b\d{2}/\d{2}/\d{4}\b', '*date*'),
     ]
 
     matches = find_matches(text, phi_patterns)
-    matches += find_name_references(text, patient_name, r'\b(Mr\.|Ms\.|Mrs\.)\s*')
-    matches += find_name_references(text, provider_name, r'\b(Dr\.)\s*')
+    matches += find_name_references(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
+    matches += find_name_references(text, provider_name, r'\b([Dd]r\.)\s*')
     matches.sort(key=lambda x: x[0])  # sort by appearance
 
     removed_items = []
