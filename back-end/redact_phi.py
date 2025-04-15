@@ -105,6 +105,7 @@ def redact_phi(input_file, output_file):
         (r'([Ll]ab [Rr]esults)(?:\s\(\d{2}\/\d{2}\/\d{4}\)):([\s\S]*)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
         (r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
         (r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
+        (r'([Bb]iometric):\s*(.*)', r'\1: *biometric*'),
         #(r'\b\d{2}/\d{2}/\d{4}\b', '*date*'),
     ]
 
