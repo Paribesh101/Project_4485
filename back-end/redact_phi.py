@@ -21,7 +21,7 @@ def find_matches(text, phi_patterns):
         for match in re.finditer(pattern, text):
             span = match.span()
             if span in match_spans:
-                continue  # skip duplicates by span
+                continue
             match_spans.add(span)
             if match.lastindex:
                 if match.lastindex == 2:
@@ -73,7 +73,7 @@ def encrypt_removed_items(items):
     encrypted = cipher_suite.encrypt(joined)
     return key, encrypted, cipher_suite
 
-def redact_phi(input_file, output_file):
+def redact_phi(input_file, output_file, exclude_options, custom_allergies):
     with open(input_file, 'r', encoding='utf-8', errors='ignore') as file:
         text = file.read()
 
@@ -82,38 +82,44 @@ def redact_phi(input_file, output_file):
 
     patient_name, provider_name = extract_names(text)
 
-    # patterns must use group 2 for the sensitive value
-    phi_patterns = [
-        (r'([Dd]ate [Oo]f [Bb]irth|[Dd][Oo][Bb]):\s(\d{2}/\d{2}/\d{4})', r'\1: *dob*'),
-        (r'([Mm]edical [Rr]ecord [Nn]umber):\s*([\w-]+)', r'\1: *mrn*'),
-        (r'([Ss][Ss][Nn]|[Ss]ocial [Ss]ecurity [Nn]umber):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
-        (r'([Aa]ddress:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
-        (r'([Ff]ax [Nn]o\.?):\s*\(?\d{3}\)?[-\s]?\d{3}-\d{4}', r'\1: *fax*'),
-        (r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b', '*phone*'),
-        (r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
-        (r'([Hh]ealth [Pp]lan [Bb]eneficiary [Nn]umber):\s*([\d-]+)', r'\1: *beneficiary*'),
-        (r'([Dd]evice [Ii]dentifier):\s*([\w-]+)', r'\1: *device*'),
-        (r'([Pp]acemaker [Ss]erial [Nn]umbers):\s*([\w-]+)', r'\1: *serial*'),
-        (r'([Cc]ode):\s*(\d+)', r'\1: *code*'),
-        (r'([Hh]ospital [Nn]ame):\s(.+)', r'\1 *hospital*'),
-        (r'([Cc]ertificate [Nn]umber):\s*([\w-]+)', r'\1: *certificate*'),
-        (r'([Hh]ealth [Ii]nsurance):\s*([\w-]+)', r'\1: *insurance*'),
-        (r'([Gg]roup [Nn]o\.?):\s*(\d+)', r'\1: *group*'),
-        (r'([Uu][Rr][Ll]):\s*(\S+)', r'\1: *url*'),
-        (r'\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\b', '*ip*'),
-        (r'([Ll]icense [Nn]umber):\s*([\w-]+)', r'\1: *license*'),
-        (r'(?m)^-\s*Morphine.*', '*allergy*'),
-        (r'(?m)^-\s*Sulfa drugs.*', '*allergy*'),
-        (r'([Ll]ab [Rr]esults)(?:\s\(\d{2}\/\d{2}\/\d{4}\)):([\s\S]*)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
-        (r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
-        (r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
-        (r'([Bb]iometric):\s*(.*)', r'\1: *biometric*')
+    all_phi_patterns = [
+        ("dob", r'([Dd]ate [Oo]f [Bb]irth|[Dd][Oo][Bb]):\s(\d{2}/\d{2}/\d{4})', r'\1: *dob*'),
+        ("mrn", r'([Mm]edical [Rr]ecord [Nn]umber):\s*([\w-]+)', r'\1: *mrn*'),
+        ("ssn", r'([Ss][Ss][Nn]|[Ss]ocial [Ss]ecurity [Nn]umber):\s([\d\*]{3}-[\d\*]{2}-\d{4})', r'\1: *ssn*'),
+        ("address", r'([Aa]ddress:\s)([\w\s,]+,\s[A-Z]{2}\s\d{5})', r'\1*address*'),
+        ("fax", r'([Ff]ax [Nn]o\.?):\s*\(?\d{3}\)?[-\s]?\d{3}-\d{4}', r'\1: *fax*'),
+        ("phone", r'\b\(?\d{3}\)?[-\s]?\d{3}-\d{4}\b', '*phone*'),
+        ("email", r'\b[\w.-]+@[\w.-]+\.\w+\b', '*email*'),
+        ("beneficiary", r'([Hh]ealth [Pp]lan [Bb]eneficiary [Nn]umber):\s*([\d-]+)', r'\1: *beneficiary*'),
+        ("device", r'([Dd]evice [Ii]dentifier):\s*([\w-]+)', r'\1: *device*'),
+        ("serial", r'([Pp]acemaker [Ss]erial [Nn]umbers):\s*([\w-]+)', r'\1: *serial*'),
+        ("code", r'([Cc]ode):\s*(\d+)', r'\1: *code*'),
+        ("hospital", r'([Hh]ospital [Nn]ame):\s(.+)', r'\1 *hospital*'),
+        ("certificate", r'([Cc]ertificate [Nn]umber):\s*([\w-]+)', r'\1: *certificate*'),
+        ("insurance", r'([Hh]ealth [Ii]nsurance):\s*([\w-]+)', r'\1: *insurance*'),
+        ("group", r'([Gg]roup [Nn]o\.?):\s*(\d+)', r'\1: *group*'),
+        ("url", r'([Uu][Rr][Ll]):\s*(\S+)', r'\1: *url*'),
+        ("ip", r'\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\b', '*ip*'),
+        ("license", r'([Ll]icense [Nn]umber):\s*([\w-]+)', r'\1: *license*'),
+        ("labs", r'([Ll]ab [Rr]esults)(?:\s\(\d{2}/\d{2}/\d{4}\)):\s*([\s\S]*?)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
+        ("account", r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
+        ("name", r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
+        ("biometric", r'([Bb]iometric):\s*(.*)', r'\1: *biometric*')
     ]
 
+    # Add custom allergy rules
+    for allergy in custom_allergies:
+        pattern = rf'(?m)^-\s*{re.escape(allergy)}.*'
+        all_phi_patterns.append(("allergy", pattern, '*allergy*'))
+
+    phi_patterns = [(pat, rep) for label, pat, rep in all_phi_patterns if label not in exclude_options]
+
     matches = find_matches(text, phi_patterns)
-    matches += find_name_references(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
-    matches += find_name_references(text, provider_name, r'\b([Dd]r\.)\s*')
-    matches.sort(key=lambda x: x[0])  # sort by appearance
+    if "patient" not in exclude_options:
+        matches += find_name_references(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
+    if "doctor" not in exclude_options:
+        matches += find_name_references(text, provider_name, r'\b([Dd]r\.)\s*')
+    matches.sort(key=lambda x: x[0])
 
     removed_items = []
     seen = set()
@@ -123,8 +129,10 @@ def redact_phi(input_file, output_file):
             seen.add(item)
 
     text = redact_text(text, phi_patterns)
-    text = redact_names(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
-    text = redact_names(text, provider_name, r'\b([Dd]r\.)\s*')
+    if "patient" not in exclude_options:
+        text = redact_names(text, patient_name, r'\b([Mm]r\.|[Mm]s\.|[Mm]rs\.)\s*')
+    if "doctor" not in exclude_options:
+        text = redact_names(text, provider_name, r'\b([Dd]r\.)\s*')
 
     with open(output_file, 'w', encoding='utf-8') as file:
         file.write(text)
@@ -136,7 +144,6 @@ def redact_phi(input_file, output_file):
     print("Encryption Key:", key.decode())
     print("Encrypted Removed Items:", encrypted.decode())
 
-    # debug check: decrypt to verify content
     decrypted = cipher_suite.decrypt(encrypted).decode()
     print("Decrypted Removed Items (for debug):")
     print(decrypted)
@@ -145,6 +152,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Redact PHI from a text file.")
     parser.add_argument("input_file", help="Path to the input text file.")
     parser.add_argument("output_file", help="Path to save the redacted text file.")
+    parser.add_argument("-o", "--omit", help="Pipe-delimited list of PHI labels to exclude (e.g., 'mrn|labs|patient|doctor')", default="")
+    parser.add_argument("-a", "--allergies", help="Pipe-delimited list of custom allergy terms to redact (e.g., 'Morphine|Sulfa drugs')", default="")
     args = parser.parse_args()
 
-    redact_phi(args.input_file, args.output_file)
+    excluded = set(args.omit.split('|')) if args.omit else set()
+    allergies = args.allergies.split('|') if args.allergies else []
+
+    redact_phi(args.input_file, args.output_file, excluded, allergies)
