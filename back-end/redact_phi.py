@@ -15,7 +15,9 @@ def extract_names(text):
 def find_matches(text, phi_patterns):
     match_spans = set()
     matches = []
-    for pattern, _ in phi_patterns:
+    for pattern, replacement in phi_patterns:
+        identifier = re.search(r'\*(\w+)\*', replacement)
+        label = identifier.group(1) if identifier else "phi"
         for match in re.finditer(pattern, text):
             span = match.span()
             if span in match_spans:
@@ -23,13 +25,13 @@ def find_matches(text, phi_patterns):
             match_spans.add(span)
             if match.lastindex:
                 if match.lastindex == 2:
-                    matches.append((span[0], match.group(2).strip()))
+                    matches.append((span[0], f"**{label}**{match.group(2).strip()}"))
                 else:
                     for i in range(2, match.lastindex + 1):
                         if match.group(i):
-                            matches.append((span[0], match.group(i).strip()))
+                            matches.append((span[0], f"**{label}**{match.group(i).strip()}"))
             else:
-                matches.append((span[0], match.group(0).strip()))
+                matches.append((span[0], f"**{label}**{match.group(0).strip()}"))
     return matches
 
 # find mentions like "Mr. Smith" or full name references
@@ -39,9 +41,9 @@ def find_name_references(text, name, title_pattern):
         last_name = name.split()[-1]
         full_title_pattern = title_pattern + re.escape(last_name) + r'\b'
         for match in re.finditer(full_title_pattern, text, flags=re.IGNORECASE):
-            references.append((match.start(), match.group(0)))
+            references.append((match.start(), f"**name**{match.group(0)}"))
         for match in re.finditer(r'\b' + re.escape(name) + r'\b', text, flags=re.IGNORECASE):
-            references.append((match.start(), match.group(0)))
+            references.append((match.start(), f"**name**{match.group(0)}"))
     return references
 
 # apply substitutions for PHI
@@ -105,8 +107,7 @@ def redact_phi(input_file, output_file):
         (r'([Ll]ab [Rr]esults)(?:\s\(\d{2}\/\d{2}\/\d{4}\)):([\s\S]*)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
         (r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
         (r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
-        (r'([Bb]iometric):\s*(.*)', r'\1: *biometric*'),
-        #(r'\b\d{2}/\d{2}/\d{4}\b', '*date*'),
+        (r'([Bb]iometric):\s*(.*)', r'\1: *biometric*')
     ]
 
     matches = find_matches(text, phi_patterns)
