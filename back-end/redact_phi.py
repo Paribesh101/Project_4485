@@ -25,13 +25,13 @@ def find_matches(text, phi_patterns):
             match_spans.add(span)
             if match.lastindex:
                 if match.lastindex == 2:
-                    matches.append((span[0], f"**{label}**{match.group(2).strip()}"))
+                    matches.append((span[0], f"*{label}*|{match.group(2).strip()}"))
                 else:
                     for i in range(2, match.lastindex + 1):
                         if match.group(i):
-                            matches.append((span[0], f"**{label}**{match.group(i).strip()}"))
+                            matches.append((span[0], f"*{label}*|{match.group(i).strip()}"))
             else:
-                matches.append((span[0], f"**{label}**{match.group(0).strip()}"))
+                matches.append((span[0], f"*{label}*|{match.group(0).strip()}"))
     return matches
 
 # find mentions like "Mr. Smith" or full name references
@@ -41,9 +41,9 @@ def find_name_references(text, name, title_pattern):
         last_name = name.split()[-1]
         full_title_pattern = title_pattern + re.escape(last_name) + r'\b'
         for match in re.finditer(full_title_pattern, text, flags=re.IGNORECASE):
-            references.append((match.start(), f"**name**{match.group(0)}"))
+            references.append((match.start(), f"*name*|{match.group(0)}"))
         for match in re.finditer(r'\b' + re.escape(name) + r'\b', text, flags=re.IGNORECASE):
-            references.append((match.start(), f"**name**{match.group(0)}"))
+            references.append((match.start(), f"*name*|{match.group(0)}"))
     return references
 
 # apply substitutions for PHI
