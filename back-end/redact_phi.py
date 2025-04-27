@@ -103,7 +103,7 @@ def redact_phi(input_file, output_file, exclude_options, custom_allergies):
         ("license", r'([Ll]icense [Nn]umber):\s*([\w-]+)', r'\1: *license*'),
         ("labs", r'([Ll]ab [Rr]esults)(?:\s\(\d{2}/\d{2}/\d{4}\)):\s*([\s\S]*?)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
         ("account", r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
-        ("name", r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
+        ("swname", r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
         ("biometric", r'([Bb]iometric):\s*(.*)', r'\1: *biometric*')
     ]
 
