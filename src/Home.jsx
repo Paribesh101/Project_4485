@@ -130,9 +130,19 @@ function Home() {
         value={fileName}
         readOnly
       />
+      <hr style={{ width: '100%', margin: '20px 0' }} /> {/* Added by Zepeng Yu: Insert a line break to fix layout and ensure upload icon displays properly */}
       <AttachFileIcon
         className="icon"
         onClick={() => fileInputRef.current?.click()}
+        sx={{                       
+          fontSize: 40,
+          color: "white",
+          position: "absolute",
+          top: "44%",
+          left: "22%",
+          transform: "translate(-50%, -50%)",
+          cursor: "pointer",
+         }}// Added by Zepeng Yu: Applied style settings to properly position and display the upload icon
       />
       <input
         type="file"
