@@ -101,10 +101,10 @@ def redact_phi(input_file, output_file, exclude_options, custom_allergies):
         ("url", r'([Uu][Rr][Ll]):\s*(\S+)', r'\1: *url*'),
         ("ip", r'\b(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\b', '*ip*'),
         ("license", r'([Ll]icense [Nn]umber):\s*([\w-]+)', r'\1: *license*'),
-        (r'(?m)^-\s*Morphine.*', '*allergy*'), # in place until custom allergies are implemented in front end
-        (r'(?m)^-\s*Sulfa drugs.*', '*allergy*'), # in place until custom allergies are implemented in front end
         ("labs", r'([Ll]ab [Rr]esults)(?:\s\(\d{2}/\d{2}/\d{4}\)):\s*([\s\S]*?)(?=[Ff]ollow-[Uu]p [Aa]ppointments?:)', r'\1: *labs*\n\n'),
         ("account", r'([Mm]edicaid account|[Aa]ccount):\s((?:\d{4}\s){3}\d{4})', r'\1 *account*'),
+        ("allergy",r'(?m)^-\s*Morphine.*', '*allergy*'), # in place until custom allergies are implemented in front end
+        ("allergy",r'(?m)^-\s*Sulfa drugs.*', '*allergy*'), # in place until custom allergies are implemented in front end
         ("swname", r'([Ss]ocial [Ww]orker):\s((?:[Dd]r\.|[Mm]r\.|[Mm]s\.|[Mm]rs\.)\s?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s?(?:,\s[Mm][Dd])?)(?=\n)', r'\1 *name*'),
         ("biometric", r'([Bb]iometric):\s*(.*)', r'\1: *biometric*')
     ]
